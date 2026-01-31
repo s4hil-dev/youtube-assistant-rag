@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <div class="header">
+    <img src="icon.png" class="logo">
+    <h2>YouTube RAG Assistant</h2>
+  </div>
+
+  <button id="loadBtn" class="btn load">Load Transcript</button>
+
+  <div id="status"></div>
+
+  <textarea id="question" placeholder="Ask anything about this video..."></textarea>
+
+  <button id="askBtn" class="btn ask">Ask</button>
+
+  <div class="answer-box">
+    <h3>Answer</h3>
+    <div id="answer"></div>
+  </div>
+
+  <footer>Powered by Gemini & LangChain</footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+

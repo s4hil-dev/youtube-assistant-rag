@@ -1,0 +1,55 @@
+# ----------------------------
+# PYTHON ENV / DEPENDENCIES
+# ----------------------------
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# ----------------------------
+# FASTAPI BACKEND DATA
+# ----------------------------
+
+# Vectorstore (FAISS Index)
+vectorstores/
+
+# Never commit secrets
+backend/.env
+.env
+.env.*
+
+# ----------------------------
+# CHROME EXTENSION
+# ----------------------------
+# (no JS build artifacts, but ignore Mac/Windows junk)
+chrome-extension-frontend/.DS_Store
+
+# ----------------------------
+# SYSTEM / EDITOR FILES
+# ----------------------------
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# Windows thumbnails
+Thumbs.db
+
+# Logs
+*.log

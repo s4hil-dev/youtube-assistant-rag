@@ -1,0 +1,105 @@
+body {
+  font-family: "Inter", sans-serif;
+  background: #0f0f0f;
+  color: #fff;
+  width: 330px;
+  padding: 15px;
+  margin: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  transition: 0.2s ease;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.load {
+  background: #3c8cff;
+  color: white;
+}
+
+.ask {
+  background: #ff4c4c;
+  color: white;
+}
+
+#status {
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #cfcfcf;
+  min-height: 18px;
+}
+
+textarea {
+  width: 100%;
+  max-height: 90px;      /* 🔥 prevents overflow */
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: white;
+  padding: 10px;
+  font-size: 14px;
+  resize: none;          /* prevents dragging */
+  overflow-y: auto;      /* 🔥 adds scrollbar */
+  margin-bottom: 12px;
+  display: block;
+  box-sizing: border-box; /* ensures padding doesn't stretch width */
+}
+
+.answer-box {
+  padding: 12px;
+  background: #1b1b1b;
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+
+.answer-box h3 {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+#answer {
+  font-size: 14px;
+  line-height: 1.5em;
+  white-space: pre-wrap;
+  color: #e6e6e6;
+}
+
+footer {
+  margin-top: 15px;
+  font-size: 12px;
+  text-align: center;
+  color: #888;
+}
