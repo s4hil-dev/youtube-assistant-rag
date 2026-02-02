@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from youtube_transcript_api import YouTubeTranscriptApi
 from dotenv import load_dotenv
 import os
-import json
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
@@ -14,6 +13,9 @@ from langchain_core.output_parsers import StrOutputParser
 from fastapi.middleware.cors import CORSMiddleware
 
 
+# ---------------------------------------------------------
+# INIT
+# ---------------------------------------------------------
 load_dotenv()
 
 app = FastAPI()
@@ -26,74 +28,137 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 VECTOR_DIR = "vectorstores"
-
-if not os.path.exists(VECTOR_DIR):
-    os.makedirs(VECTOR_DIR)
+os.makedirs(VECTOR_DIR, exist_ok=True)
 
 
-# Pydantic Models
+# ---------------------------------------------------------
+# MODELS
+# ---------------------------------------------------------
 class AskRequest(BaseModel):
     video_id: str
     question: str
 
 
-# STEP 1: PROCESS VIDEO
+# ---------------------------------------------------------
+# PROCESS VIDEO → Summary → Chunk → Embed → FAISS
+# ---------------------------------------------------------
 @app.get("/process")
 def process_video(video_id: str):
     """
-    Extract transcript → split → embed → FAISS → save to local storage
+    Extract transcript → Lightweight Summary → Chunk → Embed → FAISS.
     """
 
-    # 1. Fetch transcript (new method)
+    # 1. Fetch transcript
     try:
-        fetched_transcript = YouTubeTranscriptApi().fetch(
-            video_id,
-            languages=["en"]   # add "hi" for Hindi auto-generated
-        )
+        transcript_data = YouTubeTranscriptApi().fetch(
+            video_id, languages=["en"]
+        ).to_raw_data()
 
-        transcript_list = fetched_transcript.to_raw_data()
-        transcript = " ".join(chunk["text"] for chunk in transcript_list)
-
+        transcript = " ".join(ch["text"] for ch in transcript_data)
     except Exception as e:
         return {"error": f"Transcript fetch failed: {str(e)}"}
 
-    # 2. Split text
+
+    # 2. FAST Summary (use only first 20k chars)
     try:
-        splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=50)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.2
+        )
+
+        short_transcript = transcript[:20000]
+
+        summary_prompt = f"""
+        Summarize the following YouTube transcript (first 20k characters only)
+        in 10–20 bullet points:
+
+        {short_transcript}
+        """
+
+        summary_msg = llm.invoke(summary_prompt)
+        summary = summary_msg.content if hasattr(summary_msg, "content") else str(summary_msg)
+
+    except Exception as e:
+        return {"error": f"Summarization failed: {str(e)}"}
+
+
+    # 3. Save transcript + summary
+    transcript_path = f"{VECTOR_DIR}/{video_id}_transcript.txt"
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        f.write(f"SUMMARY:\n{summary}\n\nFULL TRANSCRIPT:\n{transcript}")
+
+
+    # 4. Chunk ONLY the transcript (NOT summary)
+    try:
+        splitter = RecursiveCharacterTextSplitter(chunk_size=250, chunk_overlap=40)
         chunks = splitter.create_documents([transcript])
     except Exception as e:
-        return {"error": f"Splitter failed: {str(e)}"}
+        return {"error": f"Chunking failed: {str(e)}"}
 
-    # 3. Create embeddings + FAISS store
+
+    # 5. Embed + FAISS
     try:
         embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
-        vector_store = FAISS.from_documents(chunks, embeddings)
+        store = FAISS.from_documents(chunks, embeddings)
+        store.save_local(f"{VECTOR_DIR}/{video_id}")
 
-        faiss_path = f"{VECTOR_DIR}/{video_id}"
-        vector_store.save_local(faiss_path)
-
-        return {"message": "Indexing complete", "chunks": len(chunks)}
+        return {
+            "message": "Processing complete (optimized)",
+            "chunks": len(chunks),
+            "summary": summary
+        }
 
     except Exception as e:
         return {"error": f"Embedding/FAISS failed: {str(e)}"}
 
 
-# STEP 2: ASK QUESTION (RAG)
+
 @app.post("/ask")
 def ask_question(req: AskRequest):
     video_id = req.video_id
-    question = req.question
+    question = req.question.strip().lower()
 
     faiss_path = f"{VECTOR_DIR}/{video_id}"
+    transcript_path = f"{VECTOR_DIR}/{video_id}_transcript.txt"
 
     if not os.path.exists(faiss_path):
-        return {"error": "Video not processed yet. Click 'Load Transcript' first."}
+        return {"error": "Video not processed. Click 'Load Transcript' first."}
 
+    # --- Load summary ---
+    summary_file = f"{VECTOR_DIR}/{video_id}_summary.txt"
+    summary = None
+
+    if os.path.exists(summary_file):
+        with open(summary_file, "r", encoding="utf-8") as f:
+            summary = f.read()
+    else:
+        # fallback: read summary from transcript file
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+            if raw.startswith("SUMMARY:"):
+                summary = raw.split("SUMMARY:")[1].split("FULL TRANSCRIPT:")[0].strip()
+
+    # --- Detect global questions ---
+    global_keywords = [
+        "summary", "summarize", "overall", "main idea",
+        "key points", "explain", "explain like", "overview",
+        "gist", "in short", "high level"
+    ]
+
+    is_global = any(k in question for k in global_keywords)
+
+    # If global → return cleaned summary instantly
+    if is_global:
+        return {
+            "answer": summary,
+            "mode": "summary-mode"
+        }
+
+    # --- For local questions: RAG retrieval ---
     try:
         embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
-        vector_store = FAISS.load_local(
+        store = FAISS.load_local(
             faiss_path,
             embeddings,
             allow_dangerous_deserialization=True
@@ -101,27 +166,49 @@ def ask_question(req: AskRequest):
     except Exception as e:
         return {"error": f"FAISS load failed: {str(e)}"}
 
-    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 4})
+    retriever = store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 4}
+    )
 
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
+    # Build smart chain
     try:
-        parallel_chain = RunnableParallel({
+        chain_inputs = RunnableParallel({
             "context": retriever | RunnableLambda(format_docs),
-            "question": RunnablePassthrough()
+            "question": RunnablePassthrough(),
+            "summary": lambda _: summary
         })
 
         prompt = PromptTemplate(
             template="""
-            You are a helpful assistant.
-            Answer using ONLY the transcript context below.
-
-            {context}
-
-            Question: {question}
-            """,
-            input_variables=["context", "question"]
+                You are a YouTube video assistant with BOTH:
+                1. A global summary of the entire video
+                2. Local transcript chunks retrieved using FAISS
+                
+                Rules:
+                - If the question asks about specific details, use transcript context.
+                - Always consult summary for extra clarity.
+                - Never hallucinate. Only use provided info.
+                - Keep answers clear and clean.
+                
+                --------------------
+                GLOBAL SUMMARY:
+                {summary}
+                
+                --------------------
+                LOCAL CONTEXT:
+                {context}
+                
+                --------------------
+                QUESTION:
+                {question}
+                
+                Your answer:
+                """,
+            input_variables=["context", "question", "summary"]
         )
 
         llm = ChatGoogleGenerativeAI(
@@ -131,12 +218,15 @@ def ask_question(req: AskRequest):
 
         parser = StrOutputParser()
 
-        rag_chain = parallel_chain | prompt | llm | parser
-
+        rag_chain = chain_inputs | prompt | llm | parser
         answer = rag_chain.invoke(question)
 
-        return {"answer": answer}
+        return {
+            "answer": answer,
+            "mode": "rag-mode"
+        }
 
     except Exception as e:
         return {"error": f"RAG failed: {str(e)}"}
+
 
