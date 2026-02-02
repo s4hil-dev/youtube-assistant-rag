@@ -31,10 +31,6 @@ app.add_middleware(
 VECTOR_DIR = "vectorstores"
 os.makedirs(VECTOR_DIR, exist_ok=True)
 
-
-# ---------------------------------------------------------
-# MODELS
-# ---------------------------------------------------------
 class AskRequest(BaseModel):
     video_id: str
     question: str
@@ -187,25 +183,25 @@ def ask_question(req: AskRequest):
                 You are a YouTube video assistant with BOTH:
                 1. A global summary of the entire video
                 2. Local transcript chunks retrieved using FAISS
-                
+
                 Rules:
                 - If the question asks about specific details, use transcript context.
                 - Always consult summary for extra clarity.
                 - Never hallucinate. Only use provided info.
                 - Keep answers clear and clean.
-                
+
                 --------------------
                 GLOBAL SUMMARY:
                 {summary}
-                
+
                 --------------------
                 LOCAL CONTEXT:
                 {context}
-                
+
                 --------------------
                 QUESTION:
                 {question}
-                
+
                 Your answer:
                 """,
             input_variables=["context", "question", "summary"]
